@@ -21,7 +21,7 @@ local MokuroParser = require("mokuroparser")
 
 local MokuroReader = WidgetContainer:extend{
     name = "Mokuro",  -- Capital M for Anki plugin compatibility (self.ui['Mokuro'])
-    is_doc_only = true,
+    is_doc_only = false, -- Active in both File Manager and Reader view
     mokuro_data = nil,
     parser = nil,
     current_page = nil,
@@ -107,6 +107,40 @@ function MokuroReader:loadMokuroData()
     local file_path = self.ui.document.file
     logger.info("MokuroReader: loadMokuroData from:", file_path)
     
+    -- 1. Check for external sidecar .mokuro file first (e.g. Volume.mokuro or Volume.cbz.mokuro)
+    local sidecar_path1 = file_path:gsub("%.[^.]+$", ".mokuro")
+    local sidecar_path2 = file_path .. ".mokuro"
+    local sidecar = nil
+    
+    local f1 = io.open(sidecar_path1, "r")
+    if f1 then
+        f1:close()
+        sidecar = sidecar_path1
+    else
+        local f2 = io.open(sidecar_path2, "r")
+        if f2 then
+            f2:close()
+            sidecar = sidecar_path2
+        end
+    end
+    
+    if sidecar then
+        logger.info("MokuroReader: Found sidecar mokuro file:", sidecar)
+        local sf = io.open(sidecar, "r")
+        if sf then
+            local content = sf:read("*a")
+            sf:close()
+            if content and content ~= "" then
+                self.mokuro_data = self.parser:parse(content)
+                if self.mokuro_data then
+                    logger.info("MokuroReader: Loaded", #self.mokuro_data.pages, "pages from sidecar")
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- 2. Fall back to reading .mokuro file inside the CBZ archive
     -- Use KOReader's archiver module (supports all compression types)
     local Archiver = require("ffi/archiver")
     local reader = Archiver.Reader:new()
@@ -492,7 +526,7 @@ function MokuroReader:findBlockAtPosition(page_data, tap_pos)
         local page_w, page_h
         if self.ui.view.page_states and #self.ui.view.page_states > 0 then
             -- Find the state for our page
-            for _, state in ipairs(self.ui.view.page_states) do
+            for psi, state in ipairs(self.ui.view.page_states) do
                 if state.page == dual_pos.page then
                     -- state.dimen is the scaled size on screen
                     -- Unscale to get original page dimensions
@@ -586,6 +620,83 @@ function MokuroReader:addToMainMenu(menu_items)
     menu_items.mokuro = {
         text = _("Mokuro Reader"),
         sub_item_table = {
+            {
+                text = _("Browse Mokuro Catalog"),
+                callback = function()
+                    local MokuroCatalogViewer = require("mokurocatalogviewer")
+                    MokuroCatalogViewer:show()
+                end,
+            },
+            {
+                text = _("Mokuro Catalog Settings"),
+                sub_item_table = {
+                    {
+                        text = _("Download Folder"),
+                        callback = function()
+                            local MokuroCatalogViewer = require("mokurocatalogviewer")
+                            MokuroCatalogViewer:chooseDownloadDir()
+                        end,
+                    },
+                    {
+                        text = _("Series Title Language"),
+                        sub_item_table = {
+                            {
+                                text = _("Native (Japanese)"),
+                                checked_func = function()
+                                    return (G_reader_settings:readSetting("mokuro_title_lang") or "native") == "native"
+                                end,
+                                callback = function()
+                                    G_reader_settings:saveSetting("mokuro_title_lang", "native")
+                                end,
+                            },
+                            {
+                                text = _("English"),
+                                checked_func = function()
+                                    return G_reader_settings:readSetting("mokuro_title_lang") == "english"
+                                end,
+                                callback = function()
+                                    G_reader_settings:saveSetting("mokuro_title_lang", "english")
+                                end,
+                            },
+                            {
+                                text = _("Romaji"),
+                                checked_func = function()
+                                    return G_reader_settings:readSetting("mokuro_title_lang") == "romaji"
+                                end,
+                                callback = function()
+                                    G_reader_settings:saveSetting("mokuro_title_lang", "romaji")
+                                end,
+                            },
+                            {
+                                text = _("Folder / Original"),
+                                checked_func = function()
+                                    return G_reader_settings:readSetting("mokuro_title_lang") == "folder"
+                                end,
+                                callback = function()
+                                    G_reader_settings:saveSetting("mokuro_title_lang", "folder")
+                                end,
+                            },
+                        },
+                    },
+                    {
+                        text = _("Server URL"),
+                        callback = function()
+                            local MokuroCatalogViewer = require("mokurocatalogviewer")
+                            MokuroCatalogViewer:changeServerUrl()
+                        end,
+                    },
+                    {
+                        text = _("Refresh / Clear Catalog Cache"),
+                        callback = function()
+                            local MokuroCatalog = require("mokurocatalog")
+                            MokuroCatalog:clearCache()
+                            UIManager:show(InfoMessage:new{
+                                text = _("Catalog cache cleared. It will be refreshed on next browse."),
+                            })
+                        end,
+                    },
+                },
+            },
             {
                 text = _("Enable Mokuro"),
                 checked_func = function()

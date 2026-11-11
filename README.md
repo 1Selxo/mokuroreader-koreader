@@ -1,15 +1,20 @@
-# Mokuro Reader Plugin for KOReader
+# Mokuro Reader & Catalog Plugin for KOReader
 
-Read manga with mokuro OCR support directly in KOReader!
+Browse, download, and read manga with mokuro OCR support directly in KOReader — online browsing with full offline reading support!
 
 ## Features
 
-- ✅ **Automatic detection** of mokuro-processed CBZ files
-- ✅ **Tap on text bubbles** to see OCR'd Japanese text
-- ✅ **Dictionary integration** - long press on words to look them up
+- ✅ **Browse Mokuro Catalog**: Search and browse thousands of volumes directly from [Mokuro Bunko](https://mokuro.moe/catalog/) inside KOReader
+- ✅ **Offline Downloading**: Fetch both CBZ archives and `.mokuro` OCR sidecar files straight to your device storage for offline reading
+- ✅ **Batch Download**: One-tap "Download All Missing Volumes" for an entire series
+- ✅ **Flexible Title Display**: Show series titles in Japanese (Native), English, Romaji, or original folder names
+- ✅ **Rich Search & Sorting**: Search by English, Romaji, Japanese kanji/kana, or genre; sort by A–Z, Rating, Wordiest (total characters), Volume count, or Newest
+- ✅ **Automatic Detection**: Supports both embedded `.mokuro` files inside CBZ archives and external sidecar `.mokuro` files on disk
+- ✅ **Tap on text bubbles** to see OCR'd Japanese text in a clean popup
+- ✅ **Dictionary integration** - long press on words to look them up in your installed dictionaries
+- ✅ **Sentence mining** support for VocabBuilder and Anki plugins
 - ✅ **Adjustable font size** for better readability
-- ✅ **Works on all platforms** - Kindle, Kobo, PocketBook, Android, etc.
-- ✅ **Supports all ZIP compression types** (Mac, Windows, Linux)
+- ✅ **Works on all platforms** - Kindle, Kobo, PocketBook, Android, Linux, etc.
 
 ## Installation
 
@@ -24,7 +29,17 @@ Read manga with mokuro OCR support directly in KOReader!
 
 ## Usage
 
-### Preparing manga
+### Browsing & Downloading from the Mokuro Catalog
+
+1. In KOReader (from either the File Manager or Reader view), open the top menu: **Tools (wrench) → Mokuro Reader → Browse Mokuro Catalog**
+2. Browse series, search by name or genre, or change sort order (A-Z, Rating, Wordiest, Volumes, Newest).
+3. Tap any series to view its volumes and metadata.
+4. Tap **Download** on any volume (or **Download All Missing Volumes**) to download both the CBZ images and the Mokuro OCR data directly to your local storage.
+5. Once downloaded, tap **Open in Reader** to start reading immediately offline!
+
+### Preparing Your Own Manga (Optional)
+
+If you have your own manga not on the catalog:
 
 1. Process your manga with mokuro:
    ```bash
@@ -32,27 +47,33 @@ Read manga with mokuro OCR support directly in KOReader!
    mokuro "path/to/manga/folder"
    ```
 
-2. Create a CBZ file:
-   - **Mac/Linux**: `zip -r manga.cbz manga_folder/*`
-   - **Windows**: Use 7-Zip or built-in compression
+2. Either:
+   - Create a CBZ with the `.mokuro` file inside, or
+   - Keep `Volume.mokuro` alongside `Volume.cbz` in the same directory (sidecar support).
 
-3. Transfer the CBZ to your e-reader
+3. Transfer to your e-reader and open in KOReader!
 
 ### Reading
 
-1. Open the mokuro CBZ in KOReader
-2. The plugin detects the .mokuro file automatically
-3. **Tap on text bubbles** to see the OCR'd text
-4. **Long press on words** to look them up in your dictionaries
-5. Adjust font size in: Menu → Navigation → Mokuro Reader → Font Size
+1. Open any mokuro CBZ in KOReader.
+2. The plugin automatically detects the mokuro OCR data (whether inside the CBZ or as a sidecar `.mokuro` file).
+3. **Tap on text bubbles** to see the OCR'd text in a popup at the bottom.
+4. **Long press and drag on words** to look them up in your installed dictionaries.
+5. Add words to VocabBuilder with automatic context sentence mining!
 
 ## Settings
 
-Access plugin settings via: **Menu → Navigation → Mokuro Reader**
+Access plugin settings via: **Menu → Tools → Mokuro Reader**
 
-- **Enable/Disable** the plugin
-- **Font Size**: Small (18), Medium (22), Large (26), Extra Large (30)
-- **Status**: Check if mokuro data is loaded
+- **Browse Mokuro Catalog**: Launch the online catalog browser
+- **Mokuro Catalog Settings**:
+  - **Download Folder**: Choose where downloaded manga and OCR files are saved on your e-reader (e.g. `/mnt/us/manga`, `/sdcard/Books/manga`, etc.)
+  - **Series Title Language**: Choose between Native Japanese, English, Romaji, or original folder names
+  - **Server URL**: Customize the catalog server URL (default: `https://mokuro.moe`)
+  - **Refresh / Clear Catalog Cache**: Force refresh the local cached catalog
+- **Enable Mokuro**: Toggle OCR popup detection
+- **Font Size**: Medium (32), Large (48), Extra Large (64), Huge (80)
+- **Status**: Check currently loaded mokuro document statistics
 
 ## Compatibility
 

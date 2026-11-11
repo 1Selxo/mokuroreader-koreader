@@ -1,6 +1,6 @@
 return {
     name = "mokuro",
-    fullname = "Mokuro Reader",
-    description = [[Adds support for reading manga processed with mokuro OCR. When a CBZ contains a .mokuro file, tap on text bubbles to see the OCR'd Japanese text in a popup, with dictionary lookup support.]],
+    fullname = "Mokuro Reader & Catalog",
+    description = [[Adds support for reading manga processed with mokuro OCR and browsing/downloading content directly from the Mokuro catalog for offline reading. Supports both embedded and sidecar .mokuro files with interactive popups and dictionary lookup.]],
     sorting_hint = "tools",
 }

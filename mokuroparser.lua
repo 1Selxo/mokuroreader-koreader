@@ -57,7 +57,7 @@ function MokuroParser:getBlockText(block)
     end
     
     local text_lines = {}
-    for _, line in ipairs(block.lines) do
+    for i, line in ipairs(block.lines) do
         table.insert(text_lines, line)
     end
     
