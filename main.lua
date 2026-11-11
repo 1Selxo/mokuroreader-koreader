@@ -79,18 +79,25 @@ function MokuroReader:hookReaderHighlight()
         if self.mokuro_data and self.enabled and ges and ges.pos then
             logger.info(string.format("MokuroReader: Intercepted HOLD at screen (%d, %d)",
                 math.floor(ges.pos.x), math.floor(ges.pos.y)))
+            
+            -- Priority 1: Comic Panel Zoom on long-press (if enabled)
+            if hl_self.panel_zoom_enabled and hl_self.onPanelZoom then
+                local res = hl_self:onPanelZoom(arg, ges)
+                if res then
+                    logger.info("MokuroReader: Comic Panel Zoom activated on hold")
+                    return true
+                end
+            end
+            
+            -- Priority 2: Mokuro speech bubble text popup
             local consumed = self:onMokuroTap(ges)
             if consumed then
                 return true
             end
             
-            -- If user held down on manga page outside speech bubbles:
-            -- NEVER fall through to KOReader's missing Tesseract OCR dialog!
-            logger.info("MokuroReader: Hold outside speech bubble - suppressing Tesseract OCR error")
-            if hl_self.panel_zoom_enabled and hl_self.onPanelZoom then
-                return hl_self:onPanelZoom(arg, ges)
-            end
-            return true  -- Consume so Tesseract OCR dialog is never shown
+            -- Suppress fallback to KOReader's missing Tesseract OCR dialog
+            logger.info("MokuroReader: Hold outside panel/bubble - suppressing Tesseract OCR error")
+            return true
         end
         if orig_onHold then
             return orig_onHold(hl_self, arg, ges)
@@ -206,10 +213,17 @@ function MokuroReader:checkAndLoadMokuro()
             timeout = 3,
         })
         
-        -- Disable KOReader's panel zoom for this manga so long-presses don't blow up the comic panels
+        -- Ensure Comic Panel Zoom is enabled for manga
         if self.ui.highlight then
-            self._orig_panel_zoom = self.ui.highlight.panel_zoom_enabled
-            self.ui.highlight.panel_zoom_enabled = false
+            self.ui.highlight.panel_zoom_enabled = true
+        end
+        
+        -- Automatically default Japanese manga to Right-to-Left (RTL) reading order if not overridden
+        if self.ui.view and not self.ui.doc_settings:has("page_direction_user_override") then
+            if not self.ui.view.inverse_reading_order then
+                logger.info("MokuroReader: Defaulting manga to Right-to-Left (RTL) reading order")
+                self.ui.view:onToggleReadingOrder(true)
+            end
         end
         
         -- Hook ReaderHighlight and touch zones after data is loaded
@@ -746,6 +760,32 @@ function MokuroReader:addToMainMenu(menu_items)
                         end,
                     },
                 },
+            },
+            {
+                text = _("Reading Direction: Right-to-Left (Manga)"),
+                checked_func = function()
+                    return self.ui.view and self.ui.view.inverse_reading_order or false
+                end,
+                callback = function()
+                    if self.ui.view then
+                        self.ui.view:onToggleReadingOrder()
+                    end
+                end,
+            },
+            {
+                text = _("Comic Panel Zoom (Hold to Zoom)"),
+                checked_func = function()
+                    return self.ui.highlight and self.ui.highlight.panel_zoom_enabled or false
+                end,
+                callback = function()
+                    if self.ui.highlight then
+                        self.ui.highlight.panel_zoom_enabled = not self.ui.highlight.panel_zoom_enabled
+                        self.ui.doc_settings:saveSetting("panel_zoom_enabled", self.ui.highlight.panel_zoom_enabled)
+                        UIManager:show(InfoMessage:new{
+                            text = self.ui.highlight.panel_zoom_enabled and _("Panel Zoom enabled (long-press to zoom)") or _("Panel Zoom disabled"),
+                        })
+                    end
+                end,
             },
             {
                 text = _("Enable Mokuro"),
