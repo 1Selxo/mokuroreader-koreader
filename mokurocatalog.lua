@@ -75,9 +75,7 @@ end
 -- Helper to encode URL components safely
 local function url_encode(str)
     if not str then return "" end
-    return (str:gsub("([^%w%-%_%.%~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end))
+    return url.escape(str)
 end
 
 -- Format bytes into human-readable size
@@ -126,8 +124,17 @@ function MokuroCatalog:getDownloadDir()
     if saved and saved ~= "" then
         return saved:gsub("/+$", "")
     end
+    -- Standard user storage directories by platform
+    if util.pathExists("/mnt/us") then
+        return "/mnt/us/manga" -- Kindle user partition
+    elseif util.pathExists("/mnt/onboard") then
+        return "/mnt/onboard/manga" -- Kobo user partition
+    elseif util.pathExists("/sdcard") then
+        return "/sdcard/manga" -- Android storage
+    end
     -- Default to user's home/books directory or DataStorage directory
-    local base_dir = G_reader_settings:readSetting("home_dir") or DataStorage:getDataDir()
+    local base_dir = G_reader_settings:readSetting("home_dir") or DataStorage:getDataDir() or "."
+    base_dir = base_dir:gsub("/+$", "")
     return base_dir .. "/manga"
 end
 
@@ -497,14 +504,20 @@ function MokuroCatalog:downloadFile(remote_url, local_path, expected_size, progr
 
     logger.info("MokuroCatalog: Downloading from", full_url, "to", part_path)
 
-    -- Large files: 30s block timeout, no strict total timeout as long as chunks flow
-    socketutil:set_timeout(30, 0)
+    -- Large files: 30s block timeout, -1 disables total timeout so transfers never cut off
+    socketutil:set_timeout(30, -1)
     local code, resp_headers, status = self:httpRequest{
         url = full_url,
         method = "GET",
+        headers = {
+            ["Accept-Encoding"] = "identity",
+        },
         sink = custom_sink,
     }
     socketutil:reset_timeout()
+
+    -- Ensure file handle is closed
+    pcall(function() f:close() end)
 
     if cancel_token and cancel_token.cancelled then
         if util.pathExists(part_path) then os.remove(part_path) end
