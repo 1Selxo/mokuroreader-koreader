@@ -36,6 +36,20 @@ local function sanitize_filename(name)
     return clean
 end
 
+-- Recursively remove JSON nulls (which rapidjson decodes as userdata)
+local function sanitize_nulls(t)
+    if type(t) ~= "table" then return t end
+    for k, v in pairs(t) do
+        local tv = type(v)
+        if tv == "userdata" then
+            t[k] = nil
+        elseif tv == "table" then
+            sanitize_nulls(v)
+        end
+    end
+    return t
+end
+
 -- Helper to safely parse JSON using rapidjson (fastest) or fallback to json
 local function parse_json(str)
     if not str or str == "" then
@@ -44,12 +58,16 @@ local function parse_json(str)
     local ok_rj, rapidjson = pcall(require, "rapidjson")
     if ok_rj and rapidjson and rapidjson.decode then
         local ok, data = pcall(rapidjson.decode, str)
-        if ok and data then return data end
+        if ok and data then
+            return sanitize_nulls(data)
+        end
     end
     local ok_j, json = pcall(require, "json")
     if ok_j and json and json.decode then
         local ok, data = pcall(json.decode, str)
-        if ok and data then return data end
+        if ok and data then
+            return sanitize_nulls(data)
+        end
     end
     return nil, "failed to parse JSON"
 end
@@ -64,7 +82,7 @@ end
 
 -- Format bytes into human-readable size
 local function format_size(bytes)
-    if not bytes or bytes <= 0 then return "0 B" end
+    if not bytes or type(bytes) ~= "number" or bytes <= 0 then return "0 B" end
     if bytes < 1024 then
         return string.format("%d B", bytes)
     elseif bytes < 1048576 then
@@ -145,18 +163,29 @@ end
 function MokuroCatalog:formatSeriesTitle(series_item)
     if not series_item then return "" end
     local pref = self:getTitleLang()
-    local titles = series_item.titles or {}
-    local tag = series_item.tag
+    local titles = (type(series_item.titles) == "table") and series_item.titles or {}
+    local tag = (type(series_item.tag) == "string") and series_item.tag or nil
     local title = nil
 
+    local function get_str(val)
+        if type(val) == "string" and val ~= "" then
+            return val
+        end
+        return nil
+    end
+
     if pref == "native" then
-        title = titles.native or titles.romaji or titles.english or series_item.name
+        title = get_str(titles.native) or get_str(titles.romaji) or get_str(titles.english) or series_item.name
     elseif pref == "english" then
-        title = titles.english or titles.romaji or titles.native or series_item.name
+        title = get_str(titles.english) or get_str(titles.romaji) or get_str(titles.native) or series_item.name
     elseif pref == "romaji" then
-        title = titles.romaji or titles.native or titles.english or series_item.name
+        title = get_str(titles.romaji) or get_str(titles.native) or get_str(titles.english) or series_item.name
     else -- folder
         title = series_item.name
+    end
+
+    if not title or type(title) ~= "string" then
+        title = tostring(series_item.name or "Untitled")
     end
 
     if tag and tag ~= "" and not title:find(tag, 1, true) then

@@ -140,15 +140,21 @@ local function sort_series(series_list, mode, catalog)
         end)
     elseif mode == "chars" then
         table.sort(sorted, function(a, b)
-            return (a.total_chars or 0) > (b.total_chars or 0)
+            local ca = (type(a.total_chars) == "number") and a.total_chars or 0
+            local cb = (type(b.total_chars) == "number") and b.total_chars or 0
+            return ca > cb
         end)
     elseif mode == "volumes" then
         table.sort(sorted, function(a, b)
-            return (a.volume_count or 0) > (b.volume_count or 0)
+            local va = (type(a.volume_count) == "number") and a.volume_count or 0
+            local vb = (type(b.volume_count) == "number") and b.volume_count or 0
+            return va > vb
         end)
     elseif mode == "newest" then
         table.sort(sorted, function(a, b)
-            return (a.latest_volume_modified or 0) > (b.latest_volume_modified or 0)
+            local ma = (type(a.latest_volume_modified) == "number") and a.latest_volume_modified or 0
+            local mb = (type(b.latest_volume_modified) == "number") and b.latest_volume_modified or 0
+            return ma > mb
         end)
     else -- 'title' (alphabetical by formatted display title)
         table.sort(sorted, function(a, b)
@@ -215,10 +221,10 @@ function MokuroCatalogViewer:showSeriesMenu()
     -- Series list entries
     for i, s in ipairs(sorted) do
         local display_title = catalog:formatSeriesTitle(s)
-        local vol_count = s.volume_count or 0
+        local vol_count = (type(s.volume_count) == "number") and s.volume_count or 0
         local badge = string.format(_("%d vols"), vol_count)
 
-        if s.community and s.community.score then
+        if s.community and type(s.community.score) == "number" then
             badge = string.format("★%.0f | %s", s.community.score, badge)
         end
 
@@ -345,10 +351,10 @@ function MokuroCatalogViewer:renderSeriesDetailMenu(series, volumes)
     -- Series overview badge
     local info_parts = {}
     table.insert(info_parts, string.format(_("%d volumes"), #volumes))
-    if series.total_chars and series.total_chars > 0 then
+    if series.total_chars and type(series.total_chars) == "number" and series.total_chars > 0 then
         table.insert(info_parts, string.format(_("%dK chars"), math.floor(series.total_chars / 1000)))
     end
-    if series.community and series.community.score then
+    if series.community and type(series.community.score) == "number" then
         table.insert(info_parts, string.format(_("Rating: %.0f"), series.community.score))
     end
 
@@ -401,7 +407,8 @@ function MokuroCatalogViewer:renderSeriesDetailMenu(series, volumes)
     for idx, v in ipairs(volumes) do
         local is_dl, cbz_path, mokuro_path = catalog:isVolumeDownloaded(series.name, v.name)
         local vol_name = v.name
-        local badge = is_dl and _("✓ Local") or (v.page_count and string.format(_("%d pgs"), v.page_count) or _("Download"))
+        local page_str = (type(v.page_count) == "number" and v.page_count > 0) and string.format(_("%d pgs"), v.page_count) or _("Download")
+        local badge = is_dl and _("✓ Local") or page_str
 
         local vol_entry = v
         table.insert(item_table, {
@@ -491,7 +498,7 @@ function MokuroCatalogViewer:downloadSingleVolumeWithProgress(series_name, volum
 
     local function update_progress(phase, downloaded, total)
         local phase_label = (phase == "cbz") and _("CBZ archive") or _("Mokuro OCR metadata")
-        local pct = (total and total > 0) and math.floor((downloaded / total) * 100) or 0
+        local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
         local txt = string.format(_("Downloading %s:\n%s\n\n%s / %s (%d%%)"),
             phase_label,
             volume_name,
@@ -554,7 +561,7 @@ function MokuroCatalogViewer:downloadBatchVolumes(series_name, volume_list, on_f
         local vol_name = vol.name
 
         local function update_batch_progress(phase, downloaded, total)
-            local pct = (total and total > 0) and math.floor((downloaded / total) * 100) or 0
+            local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
             local txt = string.format(_("Downloading volume %d of %d:\n%s\n\n%s (%s / %s, %d%%)"),
                 current_idx,
                 total_count,
