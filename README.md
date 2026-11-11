@@ -10,6 +10,8 @@ Browse, download, and read manga with mokuro OCR support directly in KOReader �
 - ✅ **Flexible Title Display**: Show series titles in Japanese (Native), English, Romaji, or original folder names
 - ✅ **Rich Search & Sorting**: Search by English, Romaji, Japanese kanji/kana, or genre; sort by A–Z, Rating, Wordiest (total characters), Volume count, or Newest
 - ✅ **Automatic Detection**: Supports both embedded `.mokuro` files inside CBZ archives and external sidecar `.mokuro` files on disk
+- ✅ **Comic Panel Zoom Support**: Long-press on any comic panel to zoom in on the artwork, while tapping on text bubbles opens the Mokuro OCR popup
+- ✅ **Japanese Right-to-Left (RTL) Reading**: Automatically defaults to Japanese reading direction (tap left to advance) with a one-tap menu toggle
 - ✅ **Tap on text bubbles** to see OCR'd Japanese text in a clean popup
 - ✅ **Dictionary integration** - long press on words to look them up in your installed dictionaries
 - ✅ **Sentence mining** support for VocabBuilder and Anki plugins
