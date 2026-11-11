@@ -492,26 +492,51 @@ function MokuroCatalogViewer:downloadSingleVolumeWithProgress(series_name, volum
     local progress_info = InfoMessage:new{
         text = string.format(_("Downloading:\n%s\n\nConnecting to server…"), volume_name),
         timeout = 0,
+        dismissable = false,
+        no_refresh_on_close = true,
     }
     UIManager:show(progress_info)
     UIManager:forceRePaint()
 
+    local last_update_sec = 0
+    local last_phase = nil
+
     local function update_progress(phase, downloaded, total)
-        local phase_label = (phase == "cbz") and _("CBZ archive") or _("Mokuro OCR metadata")
-        local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
-        local txt = string.format(_("Downloading %s:\n%s\n\n%s / %s (%d%%)"),
-            phase_label,
-            volume_name,
-            catalog.format_size(downloaded),
-            catalog.format_size(total),
-            pct
-        )
-        progress_info:setText(txt)
-        UIManager:forceRePaint()
+        local now = os.time()
+        if phase ~= last_phase or (now - last_update_sec >= 1) or (total and total > 0 and downloaded >= total) then
+            last_phase = phase
+            last_update_sec = now
+
+            local phase_label = (phase == "cbz") and _("CBZ archive") or _("Mokuro OCR metadata")
+            local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
+            local txt = string.format(_("Downloading %s:\n%s\n\n%s / %s (%d%%)"),
+                phase_label,
+                volume_name,
+                catalog.format_size(downloaded),
+                catalog.format_size(total),
+                pct
+            )
+
+            if progress_info then
+                UIManager:close(progress_info)
+                progress_info = nil
+            end
+            progress_info = InfoMessage:new{
+                text = txt,
+                timeout = 0,
+                dismissable = false,
+                no_refresh_on_close = true,
+            }
+            UIManager:show(progress_info)
+            UIManager:forceRePaint()
+        end
     end
 
     catalog:downloadVolume(series_name, volume_name, update_progress, function(cbz_path, mokuro_path)
-        UIManager:close(progress_info)
+        if progress_info then
+            UIManager:close(progress_info)
+            progress_info = nil
+        end
         UIManager:show(ConfirmBox:new{
             text = string.format(_("Download complete!\n\n%s\n\nWould you like to open it now?"), volume_name),
             ok_text = _("Open in Reader"),
@@ -524,7 +549,10 @@ function MokuroCatalogViewer:downloadSingleVolumeWithProgress(series_name, volum
             end,
         })
     end, function(err_msg)
-        UIManager:close(progress_info)
+        if progress_info then
+            UIManager:close(progress_info)
+            progress_info = nil
+        end
         UIManager:show(InfoMessage:new{
             text = _("Download failed:\n\n") .. tostring(err_msg),
         })
@@ -543,13 +571,18 @@ function MokuroCatalogViewer:downloadBatchVolumes(series_name, volume_list, on_f
     local progress_info = InfoMessage:new{
         text = string.format(_("Batch downloading %d volumes…\n\nStarting…"), total_count),
         timeout = 0,
+        dismissable = false,
+        no_refresh_on_close = true,
     }
     UIManager:show(progress_info)
     UIManager:forceRePaint()
 
     local function download_next()
         if cancel_token.cancelled or current_idx > total_count then
-            UIManager:close(progress_info)
+            if progress_info then
+                UIManager:close(progress_info)
+                progress_info = nil
+            end
             UIManager:show(InfoMessage:new{
                 text = string.format(_("Batch download finished!\n\nDownloaded %d of %d volumes."), completed_count, total_count),
             })
@@ -559,20 +592,37 @@ function MokuroCatalogViewer:downloadBatchVolumes(series_name, volume_list, on_f
 
         local vol = volume_list[current_idx]
         local vol_name = vol.name
+        local last_update_sec = 0
+        local last_phase = nil
 
         local function update_batch_progress(phase, downloaded, total)
-            local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
-            local txt = string.format(_("Downloading volume %d of %d:\n%s\n\n%s (%s / %s, %d%%)"),
-                current_idx,
-                total_count,
-                vol_name,
-                (phase == "cbz" and _("CBZ") or _("OCR")),
-                catalog.format_size(downloaded),
-                catalog.format_size(total),
-                pct
-            )
-            progress_info:setText(txt)
-            UIManager:forceRePaint()
+            local now = os.time()
+            if phase ~= last_phase or (now - last_update_sec >= 1) or (total and total > 0 and downloaded >= total) then
+                last_phase = phase
+                last_update_sec = now
+                local pct = (total and type(total) == "number" and total > 0) and math.floor((downloaded / total) * 100) or 0
+                local txt = string.format(_("Downloading volume %d of %d:\n%s\n\n%s: %s / %s (%d%%)"),
+                    current_idx,
+                    total_count,
+                    vol_name,
+                    (phase == "cbz" and _("CBZ archive") or _("Mokuro OCR metadata")),
+                    catalog.format_size(downloaded),
+                    catalog.format_size(total),
+                    pct
+                )
+                if progress_info then
+                    UIManager:close(progress_info)
+                    progress_info = nil
+                end
+                progress_info = InfoMessage:new{
+                    text = txt,
+                    timeout = 0,
+                    dismissable = false,
+                    no_refresh_on_close = true,
+                }
+                UIManager:show(progress_info)
+                UIManager:forceRePaint()
+            end
         end
 
         catalog:downloadVolume(series_name, vol_name, update_batch_progress, function()

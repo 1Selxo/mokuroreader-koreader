@@ -487,8 +487,8 @@ function MokuroCatalog:downloadFile(remote_url, local_path, expected_size, progr
             end
             downloaded = downloaded + #chunk
             local now = os.time()
-            -- Throttle UI updates to once every 256KB or every 1 second
-            if progress_cb and (downloaded - last_progress_bytes >= 262144 or now ~= last_progress_time) then
+            -- Throttle progress callback to at most once per second or when complete
+            if progress_cb and (now ~= last_progress_time or (expected_size and expected_size > 0 and downloaded >= expected_size)) then
                 last_progress_bytes = downloaded
                 last_progress_time = now
                 progress_cb(downloaded, expected_size or 0)
