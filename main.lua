@@ -39,7 +39,7 @@ function MokuroReader:init()
     -- Hook into document ready
     self.onReaderReady = function()
         logger.info("MokuroReader: onReaderReady triggered")
-        UIManager:scheduleIn(1, function()
+        UIManager:scheduleIn(0.5, function()
             self:checkAndLoadMokuro()
         end)
     end
@@ -47,7 +47,48 @@ function MokuroReader:init()
     logger.info("MokuroReader: init() complete")
 end
 
+function MokuroReader:hookTouchZones()
+    if self._touch_zones_hooked then return end
+    self._touch_zones_hooked = true
+    
+    if self.ui.paging then
+        local orig_paging_setup = self.ui.paging.setupTouchZones
+        self.ui.paging.setupTouchZones = function(paging_self)
+            orig_paging_setup(paging_self)
+            if self.mokuro_data and self.enabled then
+                self:registerTouchZones()
+            end
+        end
+    end
+    
+    if self.ui.rolling then
+        local orig_rolling_setup = self.ui.rolling.setupTouchZones
+        self.ui.rolling.setupTouchZones = function(rolling_self)
+            orig_rolling_setup(rolling_self)
+            if self.mokuro_data and self.enabled then
+                self:registerTouchZones()
+            end
+        end
+    end
+end
+
+function MokuroReader:onPageUpdate()
+    if self.mokuro_data and self.enabled then
+        self:registerTouchZones()
+    end
+end
+
+function MokuroReader:onViewRecalculate()
+    if self.mokuro_data and self.enabled then
+        self:registerTouchZones()
+    end
+end
+
 function MokuroReader:registerTouchZones()
+    if not self.ui or not self.ui.registerTouchZones then
+        return
+    end
+    
     logger.info("MokuroReader: Registering touch zones")
     
     self.ui:registerTouchZones({
@@ -60,6 +101,10 @@ function MokuroReader:registerTouchZones()
             overrides = {
                 "tap_forward",
                 "tap_backward",
+                "readermenu_tap",
+                "readermenu_ext_tap",
+                "readerconfigmenu_tap",
+                "readerconfigmenu_ext_tap",
             },
             handler = function(ges)
                 return self:onMokuroTap(ges)
@@ -93,10 +138,11 @@ function MokuroReader:checkAndLoadMokuro()
     if success then
         UIManager:show(InfoMessage:new{
             text = string.format(_("Mokuro: Loaded %d pages with OCR!"), #self.mokuro_data.pages),
-            timeout = 5,
+            timeout = 3,
         })
         
-        -- NOW register touch zones after data is loaded
+        -- Hook and register touch zones after data is loaded
+        self:hookTouchZones()
         self:registerTouchZones()
     else
         logger.dbg("MokuroReader: No mokuro data in this CBZ")
@@ -244,53 +290,36 @@ local function calculateContext(full_text, selected_text)
 end
 
 function MokuroReader:onMokuroTap(ges)
-    logger.info("MokuroReader: ✓✓✓ TAP DETECTED! ✓✓✓")
-    
     if not self.mokuro_data or not self.enabled then
-        logger.dbg("MokuroReader: Not active, passing through")
         return false
     end
     
-    local page_no = self.ui:getCurrentPage()
-    local tap_x, tap_y = ges.pos.x, ges.pos.y
+    logger.info(string.format("MokuroReader: ✓✓✓ TAP DETECTED at (%d, %d) ✓✓✓", math.floor(ges.pos.x), math.floor(ges.pos.y)))
     
-    -- Check if we're in dual page mode (comicreader plugin)
-    local is_dual_page = self.ui.paging and self.ui.paging.isDualPageEnabled and self.ui.paging:isDualPageEnabled()
-    
-    if is_dual_page and self.ui.view and self.ui.view.getDualPagePosition then
-        -- Use comicreader's dual page position calculation
-        local dual_pos = self.ui.view:getDualPagePosition(ges.pos)
-        page_no = dual_pos.page
-        -- dual_pos.x and dual_pos.y are already in page coordinates (unscaled)
-        -- We'll pass this info to findBlockAtPosition
-        logger.info("MokuroReader: Dual page mode - Page:", page_no, "Pos:", dual_pos.x, dual_pos.y, "Zoom:", dual_pos.zoom)
-        
-        -- Store dual page info for findBlockAtPosition
-        self._dual_page_info = dual_pos
-    else
-        self._dual_page_info = nil
+    -- Convert screen tap position to document page coordinates
+    local page_pos
+    if self.ui.view and self.ui.view.screenToPageTransform then
+        page_pos = self.ui.view:screenToPageTransform(ges.pos)
+    elseif self.ui.view and self.ui.view.getSinglePagePosition then
+        page_pos = self.ui.view:getSinglePagePosition(ges.pos)
     end
     
-    logger.info("MokuroReader: Current page:", page_no, "Tap at:", tap_x, tap_y)
+    local page_no = (page_pos and page_pos.page) or self.ui:getCurrentPage()
+    logger.info("MokuroReader: Target page:", page_no)
     
-    -- Get page data
     local page_data = self.parser:getPageData(self.mokuro_data, page_no)
     if not page_data or not page_data.blocks or #page_data.blocks == 0 then
-        logger.dbg("MokuroReader: No text blocks on this page")
+        logger.info("MokuroReader: No text blocks on page " .. tostring(page_no) .. ", passing tap through")
         return false
     end
     
-    logger.info("MokuroReader: Page has", #page_data.blocks, "text blocks, checking tap position")
-    
-    -- Find which block was tapped
-    local tapped_block = self:findBlockAtPosition(page_data, ges.pos)
-    
+    logger.info("MokuroReader: Page has " .. tostring(#page_data.blocks) .. " text blocks, checking hit...")
+    local tapped_block = self:findBlockAtPosition(page_data, ges.pos, page_no, page_pos)
     if not tapped_block then
-        logger.dbg("MokuroReader: Tap not on any text block")
-        return false  -- Let page turning work
+        logger.info("MokuroReader: Tap did not hit any block on page " .. tostring(page_no) .. ", passing tap through")
+        return false
     end
     
-    -- Show the popup for this block
     return self:showMokuroPopup(tapped_block)
 end
 
@@ -308,6 +337,11 @@ end
 
 function MokuroReader:showMokuroPopupWithText(block, block_text)
     logger.info("MokuroReader: Showing text popup for block:", block_text)
+    
+    if self.mokuro_popup then
+        UIManager:close(self.mokuro_popup)
+        self.mokuro_popup = nil
+    end
     
     -- CRITICAL: Capture self references before creating callbacks
     -- Inside callbacks, 'self' will be mokuro_popup, not MokuroReader!
@@ -492,128 +526,72 @@ function MokuroReader:showMokuroPopupWithText(block, block_text)
     end
     
     UIManager:show(mokuro_popup)
+    UIManager:forceRePaint()
     
     return true  -- Consume the tap
 end
 
-function MokuroReader:findBlockAtPosition(page_data, tap_pos)
-    -- Get screen dimensions
-    local Screen = require("device").screen
-    local screen_w = Screen:getWidth()
-    local screen_h = Screen:getHeight()
-    
-    -- Get image dimensions from mokuro
+function MokuroReader:findBlockAtPosition(page_data, tap_pos, page_no, page_pos)
     local img_w = page_data.img_width
     local img_h = page_data.img_height
     
-    local scale, offset_x, offset_y
+    local mokuro_x, mokuro_y
     
-    -- Check if we have dual page info from onMokuroTap
-    if self._dual_page_info then
-        -- Dual page mode: coordinates are already in page space (unscaled)
-        -- We just need to convert from page coordinates to mokuro image coordinates
-        local dual_pos = self._dual_page_info
+    if page_pos and page_pos.x and page_pos.y then
+        -- Native transformed page coordinates (accounts for all zoom, crop, and pan modes)
+        local doc_dimen = self.ui.document and self.ui.document.getNativePageDimensions and self.ui.document:getNativePageDimensions(page_no)
+        local doc_w = (doc_dimen and (doc_dimen.w or doc_dimen.width)) or img_w
+        local doc_h = (doc_dimen and (doc_dimen.h or doc_dimen.height)) or img_h
         
-        -- In dual page mode, getDualPagePosition returns coordinates relative to the page
-        -- These are already divided by zoom, so they're in document coordinates
-        -- We need to map these to mokuro image coordinates
+        local scale_x = (doc_w > 0) and (img_w / doc_w) or 1
+        local scale_y = (doc_h > 0) and (img_h / doc_h) or 1
         
-        -- The page is scaled to fit, so we need to calculate how the mokuro image
-        -- maps to the document page coordinates
-        -- dual_pos.x and dual_pos.y are in document page coordinates (pixels)
-        
-        -- Get the actual page dimensions that were rendered
-        local page_w, page_h
-        if self.ui.view.page_states and #self.ui.view.page_states > 0 then
-            -- Find the state for our page
-            for psi, state in ipairs(self.ui.view.page_states) do
-                if state.page == dual_pos.page then
-                    -- state.dimen is the scaled size on screen
-                    -- Unscale to get original page dimensions
-                    page_w = state.dimen.w / state.zoom
-                    page_h = state.dimen.h / state.zoom
-                    break
-                end
-            end
-        end
-        
-        if not page_w then
-            -- Fallback: assume page dimensions match image dimensions
-            page_w = img_w
-            page_h = img_h
-        end
-        
-        -- Now scale from document page coordinates to mokuro image coordinates
-        local scale_to_mokuro_x = img_w / page_w
-        local scale_to_mokuro_y = img_h / page_h
-        
-        -- Convert tap position to mokuro coordinates
-        local mokuro_x = dual_pos.x * scale_to_mokuro_x
-        local mokuro_y = dual_pos.y * scale_to_mokuro_y
-        
-        logger.dbg(string.format("MokuroReader: Dual page - Page coords (%d,%d) -> Mokuro coords (%d,%d)",
-                                dual_pos.x, dual_pos.y, mokuro_x, mokuro_y))
-        
-        -- Check each block using mokuro coordinates directly
-        for i, block in ipairs(page_data.blocks) do
-            local box = block.box
-            if box and #box >= 4 then
-                -- box coordinates are already in mokuro image space
-                local x1 = box[1]
-                local y1 = box[2]
-                local x2 = box[3]
-                local y2 = box[4]
-                
-                -- Check if tap is inside this block
-                if mokuro_x >= x1 and mokuro_x <= x2 and
-                   mokuro_y >= y1 and mokuro_y <= y2 then
-                    logger.info(string.format("MokuroReader: Found block %d at tap position (dual page)", i))
-                    return block
-                end
-            end
-        end
-        
-        logger.dbg("MokuroReader: No block found at tap position (dual page)")
-        return nil
+        mokuro_x = page_pos.x * scale_x
+        mokuro_y = page_pos.y * scale_y
+        logger.info(string.format("MokuroReader: Transformed tap to Mokuro coords (%d, %d) [img: %dx%d, doc: %dx%d]",
+            math.floor(mokuro_x), math.floor(mokuro_y), img_w, img_h, doc_w, doc_h))
+    else
+        -- Fallback: screen fit
+        local Screen = require("device").screen
+        local screen_w = Screen:getWidth()
+        local screen_h = Screen:getHeight()
+        local scale = math.min(screen_w / img_w, screen_h / img_h)
+        local offset_x = (screen_w - img_w * scale) / 2
+        local offset_y = (screen_h - img_h * scale) / 2
+        mokuro_x = (tap_pos.x - offset_x) / scale
+        mokuro_y = (tap_pos.y - offset_y) / scale
+        logger.info(string.format("MokuroReader: Fallback tap to Mokuro coords (%d, %d)",
+            math.floor(mokuro_x), math.floor(mokuro_y)))
     end
     
-    -- Single page mode: original logic
-    -- Calculate how the image is scaled on screen
-    -- KOReader fits the image to screen, so we need to calculate the scale
-    local scale_w = screen_w / img_w
-    local scale_h = screen_h / img_h
-    scale = math.min(scale_w, scale_h)  -- Fit to screen
+    -- Check each block with a generous touch tolerance pad (25px in image space)
+    local pad = 25
+    local best_block = nil
+    local best_dist = math.huge
     
-    -- Calculate offsets (image is centered)
-    local scaled_w = img_w * scale
-    local scaled_h = img_h * scale
-    offset_x = (screen_w - scaled_w) / 2
-    offset_y = (screen_h - scaled_h) / 2
-    
-    logger.dbg(string.format("MokuroReader: Image %dx%d, Screen %dx%d, Scale %.3f, Offset %d,%d",
-                            img_w, img_h, screen_w, screen_h, scale, offset_x, offset_y))
-    
-    -- Check each block
     for i, block in ipairs(page_data.blocks) do
         local box = block.box
         if box and #box >= 4 then
-            -- Convert mokuro coordinates to screen coordinates
-            local x1 = box[1] * scale + offset_x
-            local y1 = box[2] * scale + offset_y
-            local x2 = box[3] * scale + offset_x
-            local y2 = box[4] * scale + offset_y
-            
-            -- Check if tap is inside this block
-            if tap_pos.x >= x1 and tap_pos.x <= x2 and
-               tap_pos.y >= y1 and tap_pos.y <= y2 then
-                logger.info(string.format("MokuroReader: Found block %d at tap position", i))
-                return block
+            local x1, y1, x2, y2 = box[1], box[2], box[3], box[4]
+            if mokuro_x >= (x1 - pad) and mokuro_x <= (x2 + pad) and
+               mokuro_y >= (y1 - pad) and mokuro_y <= (y2 + pad) then
+                local cx = (x1 + x2) / 2
+                local cy = (y1 + y2) / 2
+                local dist = (mokuro_x - cx)^2 + (mokuro_y - cy)^2
+                if dist < best_dist then
+                    best_dist = dist
+                    best_block = block
+                end
             end
         end
     end
     
-    logger.dbg("MokuroReader: No block found at tap position")
-    return nil
+    if best_block then
+        local text = self.parser:getBlockText(best_block)
+        logger.info(string.format("MokuroReader: Matched block text: '%s'", text:sub(1, 40)))
+    end
+    
+    return best_block
 end
 
 function MokuroReader:addToMainMenu(menu_items)
