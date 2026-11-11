@@ -78,12 +78,6 @@ function MokuroReader:onPageUpdate()
     end
 end
 
-function MokuroReader:onViewRecalculate()
-    if self.mokuro_data and self.enabled then
-        self:registerTouchZones()
-    end
-end
-
 function MokuroReader:registerTouchZones()
     if not self.ui or not self.ui.registerTouchZones then
         return
@@ -99,12 +93,27 @@ function MokuroReader:registerTouchZones()
                 ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1,
             },
             overrides = {
+                "readerhighlight_tap",
+                "readerhighlight_tap_select_mode",
                 "tap_forward",
                 "tap_backward",
                 "readermenu_tap",
                 "readermenu_ext_tap",
                 "readerconfigmenu_tap",
                 "readerconfigmenu_ext_tap",
+            },
+            handler = function(ges)
+                return self:onMokuroTap(ges)
+            end
+        },
+        {
+            id = "mokuro_hold",
+            ges = "hold",
+            screen_zone = {
+                ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1,
+            },
+            overrides = {
+                "readerhighlight_hold",
             },
             handler = function(ges)
                 return self:onMokuroTap(ges)
@@ -140,6 +149,12 @@ function MokuroReader:checkAndLoadMokuro()
             text = string.format(_("Mokuro: Loaded %d pages with OCR!"), #self.mokuro_data.pages),
             timeout = 3,
         })
+        
+        -- Disable KOReader's panel zoom for this manga so long-presses don't blow up the comic panels
+        if self.ui.highlight then
+            self._orig_panel_zoom = self.ui.highlight.panel_zoom_enabled
+            self.ui.highlight.panel_zoom_enabled = false
+        end
         
         -- Hook and register touch zones after data is loaded
         self:hookTouchZones()
@@ -564,8 +579,8 @@ function MokuroReader:findBlockAtPosition(page_data, tap_pos, page_no, page_pos)
             math.floor(mokuro_x), math.floor(mokuro_y)))
     end
     
-    -- Check each block with a generous touch tolerance pad (25px in image space)
-    local pad = 25
+    -- Check each block with a generous touch tolerance pad (35px in image space)
+    local pad = 35
     local best_block = nil
     local best_dist = math.huge
     
