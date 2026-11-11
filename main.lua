@@ -47,6 +47,59 @@ function MokuroReader:init()
     logger.info("MokuroReader: init() complete")
 end
 
+function MokuroReader:hookReaderHighlight()
+    if not self.ui or not self.ui.highlight then
+        logger.warn("MokuroReader: ui.highlight not found")
+        return
+    end
+    
+    if self._highlight_hooked then return end
+    self._highlight_hooked = true
+    
+    logger.info("MokuroReader: Hooking into ReaderHighlight onTap and onHold")
+    
+    local hl = self.ui.highlight
+    local orig_onTap = hl.onTap
+    hl.onTap = function(hl_self, arg, ges)
+        if self.mokuro_data and self.enabled and ges and ges.pos then
+            logger.info(string.format("MokuroReader: Intercepted TAP at screen (%d, %d)",
+                math.floor(ges.pos.x), math.floor(ges.pos.y)))
+            local consumed = self:onMokuroTap(ges)
+            if consumed then
+                return true
+            end
+        end
+        if orig_onTap then
+            return orig_onTap(hl_self, arg, ges)
+        end
+    end
+    
+    local orig_onHold = hl.onHold
+    hl.onHold = function(hl_self, arg, ges)
+        if self.mokuro_data and self.enabled and ges and ges.pos then
+            logger.info(string.format("MokuroReader: Intercepted HOLD at screen (%d, %d)",
+                math.floor(ges.pos.x), math.floor(ges.pos.y)))
+            local consumed = self:onMokuroTap(ges)
+            if consumed then
+                return true
+            end
+            
+            -- If user held down on manga page outside speech bubbles:
+            -- NEVER fall through to KOReader's missing Tesseract OCR dialog!
+            logger.info("MokuroReader: Hold outside speech bubble - suppressing Tesseract OCR error")
+            if hl_self.panel_zoom_enabled and hl_self.onPanelZoom then
+                return hl_self:onPanelZoom(arg, ges)
+            end
+            return true  -- Consume so Tesseract OCR dialog is never shown
+        end
+        if orig_onHold then
+            return orig_onHold(hl_self, arg, ges)
+        end
+    end
+    
+    logger.info("MokuroReader: ReaderHighlight hooked successfully!")
+end
+
 function MokuroReader:hookTouchZones()
     if self._touch_zones_hooked then return end
     self._touch_zones_hooked = true
@@ -56,6 +109,7 @@ function MokuroReader:hookTouchZones()
         self.ui.paging.setupTouchZones = function(paging_self)
             orig_paging_setup(paging_self)
             if self.mokuro_data and self.enabled then
+                self:hookReaderHighlight()
                 self:registerTouchZones()
             end
         end
@@ -66,6 +120,7 @@ function MokuroReader:hookTouchZones()
         self.ui.rolling.setupTouchZones = function(rolling_self)
             orig_rolling_setup(rolling_self)
             if self.mokuro_data and self.enabled then
+                self:hookReaderHighlight()
                 self:registerTouchZones()
             end
         end
@@ -74,6 +129,7 @@ end
 
 function MokuroReader:onPageUpdate()
     if self.mokuro_data and self.enabled then
+        self:hookReaderHighlight()
         self:registerTouchZones()
     end
 end
@@ -156,7 +212,8 @@ function MokuroReader:checkAndLoadMokuro()
             self.ui.highlight.panel_zoom_enabled = false
         end
         
-        -- Hook and register touch zones after data is loaded
+        -- Hook ReaderHighlight and touch zones after data is loaded
+        self:hookReaderHighlight()
         self:hookTouchZones()
         self:registerTouchZones()
     else
@@ -309,7 +366,7 @@ function MokuroReader:onMokuroTap(ges)
         return false
     end
     
-    logger.info(string.format("MokuroReader: ✓✓✓ TAP DETECTED at (%d, %d) ✓✓✓", math.floor(ges.pos.x), math.floor(ges.pos.y)))
+    logger.info(string.format("MokuroReader: === TOUCH DETECTED at (%d, %d) ===", math.floor(ges.pos.x), math.floor(ges.pos.y)))
     
     -- Convert screen tap position to document page coordinates
     local page_pos
@@ -580,7 +637,7 @@ function MokuroReader:findBlockAtPosition(page_data, tap_pos, page_no, page_pos)
     end
     
     -- Check each block with a generous touch tolerance pad (35px in image space)
-    local pad = 35
+    local pad = 50
     local best_block = nil
     local best_dist = math.huge
     
@@ -781,6 +838,8 @@ end
 function MokuroReader:onCloseDocument()
     self.mokuro_data = nil
     self.current_page = nil
+    self._highlight_hooked = false
+    self._touch_zones_hooked = false
     if self.mokuro_popup then
         UIManager:close(self.mokuro_popup)
         self.mokuro_popup = nil
